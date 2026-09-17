@@ -1,0 +1,67 @@
+@baseUrl = http://localhost:8080/api/v1
+@accessToken = paste-access-token-here
+@refreshToken = paste-refresh-token-here
+
+### Directory statistics
+GET {{baseUrl}}/meta/stats
+
+### Search hospitals
+GET {{baseUrl}}/hospitals?location=Delhi&emergency=true&sort=rating&page=0&size=12
+
+### GPS search
+GET {{baseUrl}}/hospitals?latitude=28.6139&longitude=77.2090&radiusKm=20&sort=distance
+
+### Compare hospitals
+GET {{baseUrl}}/hospitals/compare?ids=1,2,3
+
+### Register
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Asha User",
+  "email": "asha@example.com",
+  "mobile": "+91 98765 43210",
+  "password": "StrongPass123",
+  "city": "New Delhi",
+  "insuranceProvider": "Star Health"
+}
+
+### Login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "asha@example.com",
+  "password": "StrongPass123"
+}
+
+### Refresh access token
+POST {{baseUrl}}/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+### Profile
+GET {{baseUrl}}/users/me
+Authorization: Bearer {{accessToken}}
+
+### Save favorite
+POST {{baseUrl}}/me/favorites/1
+Authorization: Bearer {{accessToken}}
+
+### Recently viewed
+GET {{baseUrl}}/me/recently-viewed
+Authorization: Bearer {{accessToken}}
+
+### Chatbot
+POST {{baseUrl}}/chatbot/messages
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "message": "Show emergency hospitals in Delhi with Star Health",
+  "language": "en"
+}

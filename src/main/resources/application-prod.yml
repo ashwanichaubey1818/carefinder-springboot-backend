@@ -1,0 +1,9 @@
+app:
+  bootstrap-admin: ${BOOTSTRAP_ADMIN:false}
+  auth:
+    expose-dev-reset-token: false
+
+logging:
+  level:
+    root: INFO
+    com.carefinder.backend: INFO

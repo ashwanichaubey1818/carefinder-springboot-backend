@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:carefinder;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    username: sa
+    password:
+  flyway:
+    enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+
+app:
+  seed-data: true
+  bootstrap-admin: true
+  admin-email: admin@test.local
+  admin-password: Test-Admin-123!
+  staff-email: staff@test.local
+  staff-password: Test-Staff-123!
+  auth:
+    jwt-secret: test-secret-with-at-least-thirty-two-characters
+    expose-dev-reset-token: true

@@ -1,0 +1,7 @@
+spring:
+  jpa:
+    show-sql: false
+
+app:
+  auth:
+    expose-dev-reset-token: true
