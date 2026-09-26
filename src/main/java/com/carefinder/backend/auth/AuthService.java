@@ -9,6 +9,7 @@ import com.carefinder.backend.security.JwtService;
 import com.carefinder.backend.user.Role;
 import com.carefinder.backend.user.UserAccount;
 import com.carefinder.backend.user.UserRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,8 +28,8 @@ import java.util.Locale;
 public class AuthService {
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-    private static final String RESET_MESSAGE =
-            "If that email exists, a password reset instruction has been created.";
+
+    private static final String RESET_MESSAGE = "If that email exists, password reset instructions have been sent.";
 
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
@@ -36,6 +37,8 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AppProperties properties;
+    private final PasswordResetEmailService passwordResetEmailService;
+    private final String frontendUrl;
 
     public AuthService(
             UserRepository userRepository,
@@ -43,105 +46,182 @@ public class AuthService {
             PasswordResetTokenRepository resetTokenRepository,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
-            AppProperties properties
-    ) {
+            AppProperties properties,
+            PasswordResetEmailService passwordResetEmailService,
+            @Value("${app.frontend-url}") String frontendUrl) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.resetTokenRepository = resetTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.properties = properties;
+        this.passwordResetEmailService = passwordResetEmailService;
+        this.frontendUrl = frontendUrl;
     }
 
     @Transactional
-    public AuthDtos.AuthResponse register(AuthDtos.RegisterRequest request) {
+    public AuthDtos.AuthResponse register(
+            AuthDtos.RegisterRequest request) {
         String email = normalizeEmail(request.email());
+
         if (userRepository.existsByEmailIgnoreCase(email)) {
-            throw new ConflictException("An account with this email already exists.");
+            throw new ConflictException(
+                    "An account with this email already exists.");
         }
+
         UserAccount user = new UserAccount(
                 request.name().trim(),
                 email,
                 request.mobile().trim(),
                 passwordEncoder.encode(request.password()),
-                Role.USER
-        );
+                Role.USER);
+
         user.setCity(clean(request.city()));
-        user.setInsuranceProvider(clean(request.insuranceProvider()));
+        user.setInsuranceProvider(
+                clean(request.insuranceProvider()));
+
         return createSession(userRepository.save(user));
     }
 
     @Transactional
-    public AuthDtos.AuthResponse login(AuthDtos.LoginRequest request) {
-        UserAccount user = userRepository.findByEmailIgnoreCase(normalizeEmail(request.email()))
-                .orElseThrow(() -> new UnauthorizedException("Email or password is incorrect."));
-        if (!user.isEnabled() || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            throw new UnauthorizedException("Email or password is incorrect.");
+    public AuthDtos.AuthResponse login(
+            AuthDtos.LoginRequest request) {
+        UserAccount user = userRepository
+                .findByEmailIgnoreCase(
+                        normalizeEmail(request.email()))
+                .orElseThrow(() -> new UnauthorizedException(
+                        "Email or password is incorrect."));
+
+        if (!user.isEnabled()
+                || !passwordEncoder.matches(
+                        request.password(),
+                        user.getPasswordHash())) {
+            throw new UnauthorizedException(
+                    "Email or password is incorrect.");
         }
+
         return createSession(user);
     }
 
     @Transactional
-    public AuthDtos.AuthResponse refresh(AuthDtos.RefreshRequest request) {
+    public AuthDtos.AuthResponse refresh(
+            AuthDtos.RefreshRequest request) {
         RefreshToken stored = refreshTokenRepository
-                .findByTokenHashAndRevokedAtIsNull(hash(request.refreshToken()))
-                .orElseThrow(() -> new UnauthorizedException("Refresh token is invalid."));
+                .findByTokenHashAndRevokedAtIsNull(
+                        hash(request.refreshToken()))
+                .orElseThrow(() -> new UnauthorizedException(
+                        "Refresh token is invalid."));
+
         if (stored.getExpiresAt().isBefore(Instant.now())) {
             stored.revoke();
-            throw new UnauthorizedException("Refresh token has expired. Please sign in again.");
+
+            throw new UnauthorizedException(
+                    "Refresh token has expired. Please sign in again.");
         }
+
         UserAccount user = stored.getUser();
+
         if (!user.isEnabled()) {
             stored.revoke();
-            throw new UnauthorizedException("This account is disabled.");
+
+            throw new UnauthorizedException(
+                    "This account is disabled.");
         }
+
         stored.revoke();
+
         return createSession(user);
     }
 
     @Transactional
-    public ApiMessage logout(AuthDtos.LogoutRequest request) {
-        refreshTokenRepository.findByTokenHashAndRevokedAtIsNull(hash(request.refreshToken()))
+    public ApiMessage logout(
+            AuthDtos.LogoutRequest request) {
+        refreshTokenRepository
+                .findByTokenHashAndRevokedAtIsNull(
+                        hash(request.refreshToken()))
                 .ifPresent(RefreshToken::revoke);
-        return new ApiMessage("Signed out successfully.");
+
+        return new ApiMessage(
+                "Signed out successfully.");
     }
 
     @Transactional
-    public AuthDtos.PasswordResetStartResponse forgotPassword(AuthDtos.ForgotPasswordRequest request) {
-        String rawToken = userRepository.findByEmailIgnoreCase(normalizeEmail(request.email()))
+    public AuthDtos.PasswordResetStartResponse forgotPassword(
+            AuthDtos.ForgotPasswordRequest request) {
+        String rawToken = userRepository
+                .findByEmailIgnoreCase(
+                        normalizeEmail(request.email()))
                 .map(user -> {
-                    resetTokenRepository.deleteByUserId(user.getId());
+                    resetTokenRepository.deleteByUserId(
+                            user.getId());
+
                     String generated = randomToken();
-                    resetTokenRepository.save(new PasswordResetToken(
-                            hash(generated),
-                            user,
-                            Instant.now().plus(properties.auth().resetTokenMinutes(), ChronoUnit.MINUTES)
-                    ));
+
+                    resetTokenRepository.save(
+                            new PasswordResetToken(
+                                    hash(generated),
+                                    user,
+                                    Instant.now().plus(
+                                            properties
+                                                    .auth()
+                                                    .resetTokenMinutes(),
+                                            ChronoUnit.MINUTES)));
+
+                    String resetLink = frontendUrl
+                            + "/forgot-password?token="
+                            + generated;
+
+                    passwordResetEmailService
+                            .sendPasswordResetEmail(
+                                    user.getEmail(),
+                                    resetLink);
+
                     return generated;
                 })
                 .orElse(null);
-        String developmentToken = properties.auth().exposeDevResetToken() ? rawToken : null;
-        return new AuthDtos.PasswordResetStartResponse(RESET_MESSAGE, developmentToken);
+
+        String developmentToken = properties.auth().exposeDevResetToken()
+                ? rawToken
+                : null;
+
+        return new AuthDtos.PasswordResetStartResponse(
+                RESET_MESSAGE,
+                developmentToken);
     }
 
     @Transactional
-    public ApiMessage resetPassword(AuthDtos.ResetPasswordRequest request) {
+    public ApiMessage resetPassword(
+            AuthDtos.ResetPasswordRequest request) {
         PasswordResetToken stored = resetTokenRepository
-                .findByTokenHashAndUsedAtIsNull(hash(request.token()))
-                .orElseThrow(() -> new BadRequestException("Password reset token is invalid."));
+                .findByTokenHashAndUsedAtIsNull(
+                        hash(request.token()))
+                .orElseThrow(() -> new BadRequestException(
+                        "Password reset token is invalid."));
+
         if (stored.getExpiresAt().isBefore(Instant.now())) {
             stored.markUsed();
-            throw new BadRequestException("Password reset token has expired.");
+
+            throw new BadRequestException(
+                    "Password reset token has expired.");
         }
+
         UserAccount user = stored.getUser();
-        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+
+        user.setPasswordHash(
+                passwordEncoder.encode(request.newPassword()));
+
         user.invalidateAccessTokens();
         stored.markUsed();
-        refreshTokenRepository.deleteByUserId(user.getId());
-        return new ApiMessage("Password updated. Please sign in with your new password.");
+
+        refreshTokenRepository.deleteByUserId(
+                user.getId());
+
+        return new ApiMessage(
+                "Password updated. Please sign in with your new password.");
     }
 
-    public static AuthDtos.UserView toUserView(UserAccount user) {
+    public static AuthDtos.UserView toUserView(
+            UserAccount user) {
         return new AuthDtos.UserView(
                 user.getId(),
                 user.getName(),
@@ -150,47 +230,68 @@ public class AuthService {
                 user.getCity(),
                 user.getInsuranceProvider(),
                 user.getRole(),
-                user.getCreatedAt()
-        );
+                user.getCreatedAt());
     }
 
-    private AuthDtos.AuthResponse createSession(UserAccount user) {
+    private AuthDtos.AuthResponse createSession(
+            UserAccount user) {
         String rawRefreshToken = randomToken();
-        refreshTokenRepository.save(new RefreshToken(
-                hash(rawRefreshToken),
-                user,
-                Instant.now().plus(properties.auth().refreshTokenDays(), ChronoUnit.DAYS)
-        ));
+
+        refreshTokenRepository.save(
+                new RefreshToken(
+                        hash(rawRefreshToken),
+                        user,
+                        Instant.now().plus(
+                                properties
+                                        .auth()
+                                        .refreshTokenDays(),
+                                ChronoUnit.DAYS)));
+
         return new AuthDtos.AuthResponse(
                 jwtService.issue(user),
                 rawRefreshToken,
                 "Bearer",
                 jwtService.accessTokenSeconds(),
-                toUserView(user)
-        );
+                toUserView(user));
     }
 
     private String randomToken() {
         byte[] bytes = new byte[48];
+
         SECURE_RANDOM.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+
+        return Base64
+                .getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(bytes);
     }
 
     private String hash(String value) {
         try {
-            return HexFormat.of().formatHex(
-                    MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))
-            );
+            return HexFormat
+                    .of()
+                    .formatHex(
+                            MessageDigest
+                                    .getInstance("SHA-256")
+                                    .digest(
+                                            value.getBytes(
+                                                    StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 is unavailable.", exception);
+            throw new IllegalStateException(
+                    "SHA-256 is unavailable.",
+                    exception);
         }
     }
 
     private String normalizeEmail(String email) {
-        return email.trim().toLowerCase(Locale.ROOT);
+        return email
+                .trim()
+                .toLowerCase(Locale.ROOT);
     }
 
     private String clean(String value) {
-        return value == null ? "" : value.trim();
+        return value == null
+                ? ""
+                : value.trim();
     }
 }
