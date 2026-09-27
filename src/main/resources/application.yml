@@ -67,7 +67,11 @@ springdoc:
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:4200}
   cors-origins: ${CORS_ORIGINS:http://localhost:4200}
-
+  ai:
+    enabled: ${AI_CHAT_ENABLED:false}
+    api-key: ${GEMINI_API_KEY:}
+    model: ${GEMINI_MODEL:gemini-3.1-flash-lite}
+    timeout-seconds: ${GEMINI_TIMEOUT_SECONDS:15}
   brevo:
     api-key: ${BREVO_API_KEY:}
     sender-email: ${BREVO_SENDER_EMAIL:}
