@@ -46,3 +46,4 @@ to GitHub.
 - [API Endpoints](docs/API_ENDPOINTS.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Feature Mapping](docs/FEATURE_MAPPING.md)
+  [![Backend CI](https://github.com/ashwanichaubey1818/carefinder-springboot-backend/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/ashwanichaubey1818/carefinder-springboot-backend/actions/workflows/backend-ci.yml)
